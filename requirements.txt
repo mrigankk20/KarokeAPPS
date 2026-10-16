@@ -1,0 +1,8 @@
+# CPU-only PyTorch keeps the image small; Render's free tier has no GPU.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.2.2
+numpy==1.26.4
+scipy==1.13.1
+demucs==4.0.1
+faster-whisper==1.0.3
+yt-dlp==2024.8.6

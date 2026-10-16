@@ -1,0 +1,22 @@
+# One-click Render blueprint. In Render: New + -> Blueprint -> pick this repo.
+# Render reads this file and creates the service automatically.
+services:
+  - type: web
+    name: hindi-karaoke
+    runtime: docker          # use the Dockerfile (gives us ffmpeg, which native Python envs lack)
+    plan: starter            # 512 MB RAM free tier is too small for Demucs; starter has 2 GB.
+    region: singapore        # closest Render region to India; change if you like (oregon, frankfurt, ...)
+    healthCheckPath: /api/ping
+    envVars:
+      - key: KARAOKE_WHISPER
+        value: medium        # 'medium' fits comfortably in RAM; 'large-v3-turbo' is better but heavier
+      - key: KARAOKE_DEMUCS
+        value: htdemucs
+      - key: KARAOKE_MAXMIN
+        value: "12"
+      - key: PYTHONUNBUFFERED
+        value: "1"
+    disk:
+      name: cache            # processed songs persist here between requests and restarts
+      mountPath: /app/cache
+      sizeGB: 2

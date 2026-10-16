@@ -1,0 +1,1414 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Smart Hindi Karaoke</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Hind:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Layout: import screen -> busy screen (while the server works) -> player.
+   Player = lyrics + pitch lane + dock, with a drawer for voices / mic / song / recordings.
+   Look: dark theatre ink, marigold fill for sung words. */
+:root{
+  --ink:#0e0f22; --stage:#15173a; --panel:#1b1e47; --raise:#262a5c; --line:#363a78;
+  --text:#f1f0ff; --dim:#8f93c9; --cue:#e6e5ff; --sung:#ffb724; --glow:rgba(255,170,40,.5);
+  --rec:#ff4a5e; --ok:#4fdcaa; --warn:#ffd166; --male:#6d8bff; --user:#43d9ff;
+  --f-ui:'Hind','Noto Sans Devanagari',system-ui,sans-serif;
+  --f-lyr:'Baloo 2','Noto Sans Devanagari','Hind',sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{
+  margin:0; background:var(--ink); color:var(--text); font:16px/1.45 var(--f-ui);
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:env(safe-area-inset-top,0px) env(safe-area-inset-bottom,0px);
+  background-image:radial-gradient(120% 60% at 50% -10%,#2b2573 0%,rgba(43,37,115,0) 60%);
+  background-repeat:no-repeat; overflow:hidden;
+}
+button{font:inherit;color:inherit;cursor:pointer}
+input,textarea,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--sung);outline-offset:2px}
+.i{width:1.35em;height:1.35em;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.i.f{fill:currentColor;stroke:none}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:.5em;min-height:44px;padding:0 16px;border-radius:12px;border:1px solid var(--line);background:var(--raise);transition:background .15s,transform .1s}
+.btn:hover{background:#30357a}
+.btn:active{transform:scale(.97)}
+.btn:disabled{opacity:.45;pointer-events:none}
+.btn.primary{background:var(--sung);border-color:var(--sung);color:#2a1a00;font-weight:600}
+.btn.primary:hover{background:#ffc547}
+.btn.ghost{background:transparent}
+.btn.sm{min-height:36px;padding:0 12px;font-size:.9rem}
+.icon-btn{width:44px;height:44px;padding:0;border-radius:50%}
+.icon-btn.on{background:var(--sung);color:#2a1a00;border-color:var(--sung)}
+.field{display:flex;flex-direction:column;gap:6px;min-width:0}
+.field>span,.lbl{font-size:.78rem;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.txt{min-height:44px;padding:0 14px;border-radius:12px;border:1px solid var(--line);background:#12142e;width:100%;min-width:0}
+textarea.txt{padding:12px 14px;min-height:150px;line-height:1.6;resize:vertical;font-family:var(--f-lyr);font-size:1.05rem}
+select.txt{appearance:auto;color-scheme:dark}
+
+/* ---------- import ---------- */
+#import{height:100%;overflow:auto;display:flex;flex-direction:column;align-items:center;padding-block:clamp(16px,6vh,56px) 32px}
+.wrap{width:100%;max-width:780px;display:flex;flex-direction:column;gap:20px}
+.brand{display:flex;flex-direction:column;gap:6px}
+.brand h1{margin:0;font:800 clamp(2.2rem,8vw,3.8rem)/1.05 var(--f-lyr);text-wrap:balance}
+.brand h1 em{font-style:normal;color:var(--sung);text-shadow:0 0 28px var(--glow)}
+.brand p{margin:0;color:var(--dim);max-width:52ch}
+.pill{align-self:flex-start;display:inline-flex;gap:8px;align-items:center;border:1px solid var(--line);border-radius:999px;padding:5px 14px;font-size:.88rem;color:var(--dim)}
+.pill i{width:9px;height:9px;border-radius:50%;background:var(--warn)}
+.pill.ok i{background:var(--ok)} .pill.bad i{background:var(--rec)}
+.sources{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:14px}
+.card{border:1px solid var(--line);background:var(--panel);border-radius:18px;padding:18px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.card h2{margin:0;font:700 1.15rem var(--f-lyr)}
+.drop{border:2px dashed var(--line);border-radius:14px;padding:22px 14px;text-align:center;display:flex;flex-direction:column;gap:10px;align-items:center;transition:border-color .15s,background .15s;cursor:pointer}
+.drop.over{border-color:var(--sung);background:rgba(255,183,36,.08)}
+.drop small,.card small{color:var(--dim)}
+.yt-row{display:flex;gap:8px;flex-wrap:wrap}
+.yt-row .txt{flex:1 1 200px}
+.switch{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.switch input{width:22px;height:22px;accent-color:var(--sung)}
+.err{color:var(--warn);font-size:.92rem;min-height:1.3em;margin:0;white-space:pre-line}
+#lib{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+#lib li{display:flex;gap:8px;align-items:center}
+#lib .open{flex:1;min-width:0;text-align:left;border:1px solid var(--line);background:#12142e;border-radius:12px;padding:8px 12px;display:flex;flex-direction:column}
+#lib .open:hover{border-color:var(--sung)}
+#lib .open b{font:700 1rem var(--f-lyr);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#lib .open span{font-size:.8rem;color:var(--dim)}
+
+/* ---------- busy ---------- */
+#busy{height:100%;display:grid;place-items:center}
+#busy .card{width:min(560px,100%);gap:16px}
+.bar{height:12px;border-radius:6px;background:#12142e;overflow:hidden;border:1px solid var(--line)}
+.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--sung),#ffd36b);transition:width .5s}
+#busyStage{font-size:1.05rem}
+#busyMeta{font-size:.85rem;color:var(--dim);font-variant-numeric:tabular-nums}
+
+/* ---------- player ---------- */
+#player{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr) auto auto;gap:10px;padding-block:10px}
+.top{display:flex;align-items:center;gap:10px;min-width:0}
+.titlebox{flex:1;min-width:0}
+.titlebox b{display:block;font:700 1.15rem/1.2 var(--f-lyr);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.titlebox span{display:block;font-size:.85rem;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stagewrap{position:relative;overflow:hidden;border-radius:20px;border:1px solid var(--line);background:linear-gradient(180deg,#191b44,#101230)}
+#media{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.22;pointer-events:none}
+#lyrics{position:absolute;inset:0;overflow:hidden;padding-inline:4%}
+#lyrics.static{overflow:auto}
+#track{position:absolute;left:4%;right:4%;top:0;transition:transform .55s cubic-bezier(.3,.7,.2,1);will-change:transform}
+#lyrics.static #track{position:static;transform:none!important}
+.line{--unsung:#6e73b0;text-align:center;font:700 clamp(1.7rem,6.4vw,3.2rem)/1.75 var(--f-lyr);margin:.18em 0;opacity:.3;transition:opacity .4s,transform .45s cubic-bezier(.3,.7,.2,1);text-wrap:balance}
+#lyrics.static .line{opacity:.85}
+.line.nx1{opacity:.75} .line.nx2{opacity:.5} .line.far{opacity:.25}
+.line.past{opacity:.28} .line.past .w{--p:1}
+.line.cur{opacity:1;transform:scale(1.1);--unsung:var(--cue);filter:drop-shadow(0 0 14px var(--glow))}
+.line[data-who=orig]{--unsung:#5a76a8}
+.line[data-who=orig].cur{--unsung:#aab9e6}
+.tag{display:inline-block;font:700 .34em/1 var(--f-ui);letter-spacing:.1em;text-transform:uppercase;padding:.45em .7em;border-radius:999px;margin-inline-end:.8em;vertical-align:middle}
+.tag.you{background:var(--sung);color:#2a1a00}
+.tag.orig{border:1px solid var(--line);color:var(--dim)}
+.w{--p:0;display:inline-block;padding:.22em .05em;margin:-.22em 0;color:transparent;background:linear-gradient(90deg,var(--sung) calc(var(--p)*100%),var(--unsung,#6e73b0) calc(var(--p)*100%));-webkit-background-clip:text;background-clip:text}
+.empty{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:24px;color:var(--dim)}
+.empty div{max-width:38ch;display:flex;flex-direction:column;gap:12px;align-items:center}
+#banner{position:absolute;left:12px;right:12px;bottom:12px;z-index:3;display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:center;background:rgba(14,15,34,.92);border:1px solid var(--line);border-radius:14px;padding:10px 12px;font-size:.92rem}
+#chip{position:absolute;left:12px;top:12px;z-index:3;display:flex;gap:8px;align-items:center;background:rgba(14,15,34,.9);border:1px solid var(--line);border-radius:999px;padding:5px 14px;font-size:.85rem;color:var(--dim);max-width:calc(100% - 24px)}
+#chip .bar{width:70px;height:6px}
+#tap{position:absolute;inset:0;z-index:4;background:rgba(10,11,28,.94);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:20px;text-align:center}
+#tap .cur-line{font:800 clamp(1.8rem,6vw,3rem)/1.6 var(--f-lyr);color:var(--sung)}
+#tap .next-line{font:600 clamp(1.1rem,3.4vw,1.6rem)/1.6 var(--f-lyr);color:var(--dim)}
+#tapbtn{min-height:84px;min-width:min(320px,90%);font-size:1.2rem}
+#laneWrap{position:relative;height:112px;border-radius:16px;border:1px solid var(--line);background:#101230;overflow:hidden}
+#lane{width:100%;height:100%;display:block}
+#score{position:absolute;right:10px;top:8px;font:800 1.15rem var(--f-lyr);color:var(--sung);text-shadow:0 0 12px var(--glow)}
+#laneHint{position:absolute;left:10px;top:8px;font-size:.78rem;color:var(--dim)}
+
+.dock{display:flex;flex-direction:column;gap:8px;padding-bottom:4px}
+.seek{display:flex;align-items:center;gap:10px}
+.seek span{font-size:.85rem;color:var(--dim);font-variant-numeric:tabular-nums;min-width:3.2em}
+.seek span:last-child{text-align:right}
+input[type=range]{accent-color:var(--sung);width:100%;min-width:0;height:28px;margin:0}
+.controls{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.cgroup{display:flex;align-items:center;gap:8px}
+.playbtn{width:60px;height:60px;border-radius:50%;background:var(--sung);border-color:var(--sung);color:#2a1a00}
+.playbtn:hover{background:#ffc547}
+.playbtn .i{width:1.7em;height:1.7em}
+.vol{display:flex;align-items:center;gap:6px;width:150px}
+#recbtn.on{background:var(--rec);border-color:var(--rec);color:#fff;animation:pulse 1.2s infinite}
+#recbtn{gap:6px;width:auto;min-width:44px;padding:0 12px;border-radius:22px;font-variant-numeric:tabular-nums}
+@keyframes pulse{50%{box-shadow:0 0 0 7px rgba(255,74,94,.2)}}
+@media (prefers-reduced-motion:reduce){#recbtn.on{animation:none}#track,.line{transition:none}}
+
+/* ---------- drawer ---------- */
+#panel{position:fixed;z-index:20;top:0;bottom:0;right:0;width:min(420px,100vw);background:var(--panel);border-left:1px solid var(--line);transform:translateX(105%);transition:transform .3s;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+#panel.open{transform:none}
+.phead{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
+.tabs{display:flex;gap:4px;flex:1;overflow:auto}
+.tab{border:0;background:transparent;padding:8px 11px;border-radius:10px;color:var(--dim);white-space:nowrap}
+.tab[aria-selected=true]{background:var(--raise);color:var(--text)}
+.pbody{overflow:auto;padding:14px 16px 24px;display:flex;flex-direction:column;gap:18px}
+.group{display:flex;flex-direction:column;gap:10px}
+.group h3{margin:0;font:700 1rem var(--f-lyr);display:flex;align-items:center;justify-content:space-between}
+.srow{display:grid;grid-template-columns:1fr auto;gap:2px 10px;align-items:center}
+.srow label{font-size:.92rem}
+.srow output{font-size:.85rem;color:var(--dim);font-variant-numeric:tabular-nums}
+.srow input{grid-column:1/-1}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:transparent;border-radius:999px;padding:5px 14px;font-size:.9rem}
+.chip.on{background:var(--sung);color:#2a1a00;border-color:var(--sung)}
+.hint{font-size:.85rem;color:var(--dim);margin:0}
+.meter{height:8px;border-radius:4px;background:#12142e;overflow:hidden}
+.meter i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--ok),var(--warn) 80%,var(--rec));transition:width .08s}
+#tl{position:relative;height:46px;border-radius:10px;overflow:hidden;background:#12142e;border:1px solid var(--line);cursor:pointer;touch-action:manipulation}
+#tl .s{position:absolute;top:0;bottom:0;border-right:1px solid rgba(0,0,0,.35)}
+#tl .s.f{background:var(--sung);opacity:.85}
+#tl .s.m{background:var(--male);opacity:.55}
+#tl .s.sel{outline:2px solid #fff;outline-offset:-2px;opacity:1}
+#tl .ph{position:absolute;top:0;bottom:0;width:2px;background:#fff;pointer-events:none}
+.legend{display:flex;gap:14px;font-size:.82rem;color:var(--dim)}
+.legend b{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+#segEdit{display:flex;flex-direction:column;gap:8px;border:1px solid var(--line);border-radius:12px;padding:10px;background:#12142e}
+#recs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}
+#recs li{border:1px solid var(--line);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:8px;background:#12142e}
+#recs audio{width:100%;height:40px}
+#recs .rname{font-size:.9rem;overflow-wrap:anywhere}
+#recs .ractions{display:flex;gap:8px;flex-wrap:wrap}
+#recs a.btn{text-decoration:none}
+
+dialog{width:min(640px,calc(100vw - 24px));max-height:calc(100dvh - 24px);border:1px solid var(--line);border-radius:18px;background:var(--panel);color:var(--text);padding:0}
+dialog::backdrop{background:rgba(5,5,16,.7)}
+.dbody{padding:18px;display:flex;flex-direction:column;gap:16px;overflow:auto;max-height:calc(100dvh - 24px)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+#results{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+#results button{width:100%;text-align:left;border:1px solid var(--line);background:#12142e;border-radius:12px;padding:10px 12px;display:flex;justify-content:space-between;gap:10px;align-items:center}
+#results button:hover{border-color:var(--sung)}
+.badge{font-size:.72rem;border-radius:999px;padding:2px 8px;border:1px solid var(--line);color:var(--dim);white-space:nowrap}
+.badge.ok{color:var(--ok);border-color:var(--ok)}
+#toast{position:fixed;left:50%;bottom:calc(88px + env(safe-area-inset-bottom,0px));transform:translate(-50%,20px);opacity:0;background:#fff;color:#14152e;padding:10px 16px;border-radius:12px;font-size:.92rem;z-index:50;max-width:min(92vw,520px);pointer-events:none;transition:.25s;white-space:pre-line}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+
+.immersive .top{display:none}
+.immersive #player{padding-block:6px}
+.immersive .stagewrap{border-radius:0;border-color:transparent}
+.immersive .line{font-size:clamp(2rem,min(7.5vw,11vh),4.4rem)}
+@media (max-width:620px) and (orientation:portrait){
+  #panel{top:auto;left:0;right:0;width:auto;max-height:80dvh;border-left:0;border-top:1px solid var(--line);border-radius:20px 20px 0 0;transform:translateY(105%)}
+  #panel.open{transform:none}
+  .vol{display:none}
+}
+@media (orientation:landscape) and (max-height:520px){
+  .line{font-size:clamp(1.4rem,min(5vw,10vh),2.8rem);line-height:1.6}
+  .playbtn{width:48px;height:48px}
+  .icon-btn{width:38px;height:38px}
+  .dock{gap:4px}
+  #laneWrap{height:78px}
+  .top .titlebox span{display:none}
+}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l13-7.5z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M6 4h4.5v16H6zM13.5 4H18v16h-4.5z"/></symbol>
+  <symbol id="i-restart" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
+  <symbol id="i-rec" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6.5"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h8M18 7h2M4 17h2M12 17h8"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></symbol>
+  <symbol id="i-lyrics" viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h13"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></symbol>
+  <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 15V3M8 7l4-4 4 4M5 12v8h14v-8"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M9 7V4h6v3M7 7l1 13h8l1-13"/></symbol>
+  <symbol id="i-vol" viewBox="0 0 24 24"><path d="M4 9.5v5h4l5 4v-13l-5 4zM16.5 9a4 4 0 0 1 0 6"/></symbol>
+  <symbol id="i-wave" viewBox="0 0 24 24"><path d="M3 12h2M7 8v8M11 4v16M15 8v8M19 10v4M21 12h0"/></symbol>
+</svg>
+
+<!-- ================= IMPORT ================= -->
+<section id="import">
+  <div class="wrap">
+    <div class="brand">
+      <h1>Smart Hindi <em>Karaoke</em></h1>
+      <p>Drop in a duet. The AI takes out the male singer, keeps the music and the female voice, and writes the Hindi lyrics, so you can sing the male part.</p>
+    </div>
+    <span class="pill" id="pill"><i></i><span id="pillTxt">Checking the server…</span></span>
+
+    <div class="sources">
+      <div class="card">
+        <h2>Upload a video or audio file</h2>
+        <label class="drop" id="drop">
+          <svg class="i" style="width:2em;height:2em"><use href="#i-download"/></svg>
+          <b>Choose an MP4 or MP3</b>
+          <small>or drop a file here. M4A and WAV work too.</small>
+          <input id="file" type="file" accept="video/*,audio/*,.mp4,.m4a,.mp3,.wav" hidden>
+          <span class="btn primary">Choose file</span>
+        </label>
+      </div>
+      <div class="card">
+        <h2>Paste a YouTube link</h2>
+        <form class="yt-row" id="ytform">
+          <input id="yturl" class="txt" type="url" inputmode="url" placeholder="https://youtube.com/watch?v=..." aria-label="YouTube link">
+          <button class="btn primary" type="submit">Load</button>
+        </form>
+        <small>The server downloads the audio, then removes the male voice like it does for a file.</small>
+      </div>
+    </div>
+    <label class="switch card" style="flex-direction:row"><span><b>Write Hindi lyrics with AI</b><br><small>Runs in the background after the song is ready, so you can start singing at once.</small></span><input id="optLyrics" type="checkbox" checked></label>
+    <p class="err" id="importErr" role="alert"></p>
+
+    <div class="card" id="libCard" hidden>
+      <h2>Your songs</h2>
+      <ul id="lib"></ul>
+      <small>Songs you already processed open instantly, no upload needed.</small>
+    </div>
+  </div>
+</section>
+
+<!-- ================= BUSY ================= -->
+<section id="busy" hidden>
+  <div class="card">
+    <h2 id="busyTitle">Preparing your song</h2>
+    <div class="bar"><i id="busyBar"></i></div>
+    <div id="busyStage">Starting…</div>
+    <div id="busyMeta"></div>
+    <small>Removing a singer is heavy AI work. A phone-length song takes a few minutes on a normal computer and well under one on a graphics card. It only happens once per song.</small>
+    <button class="btn" id="busyCancel">Cancel</button>
+  </div>
+</section>
+
+<!-- ================= PLAYER ================= -->
+<section id="player" hidden>
+  <header class="top">
+    <button class="btn icon-btn ghost" id="backBtn" aria-label="Choose another song"><svg class="i"><use href="#i-back"/></svg></button>
+    <div class="titlebox"><b id="songTitle">Song</b><span id="songArtist"></span></div>
+    <button class="btn" id="lyricsBtn"><svg class="i"><use href="#i-lyrics"/></svg><span>Lyrics</span></button>
+    <button class="btn" id="mixBtn"><svg class="i"><use href="#i-sliders"/></svg><span>Mixer</span></button>
+  </header>
+
+  <main class="stagewrap" id="stage">
+    <video id="media" muted playsinline preload="auto"></video>
+    <div id="lyrics"><div id="track"></div></div>
+    <div class="empty" id="empty" hidden><div id="emptyMsg"></div></div>
+    <div id="chip" hidden><span id="chipTxt"></span><span class="bar"><i id="chipBar"></i></span></div>
+    <div id="banner" hidden></div>
+    <div id="tap" hidden>
+      <div class="lbl" id="tapCount"></div>
+      <div class="cur-line" id="tapCur"></div>
+      <div class="next-line" id="tapNext"></div>
+      <button class="btn primary" id="tapbtn">Tap when this line starts</button>
+      <div class="cgroup"><button class="btn" id="tapUndo">Undo</button><button class="btn" id="tapDone">Finish</button></div>
+      <small class="hint">Press Space or Enter instead of tapping if you are on a computer.</small>
+    </div>
+  </main>
+
+  <div id="laneWrap" hidden>
+    <canvas id="lane"></canvas>
+    <div id="laneHint"></div>
+    <div id="score" hidden></div>
+  </div>
+
+  <footer class="dock">
+    <div class="seek">
+      <span id="tcur">0:00</span>
+      <input id="seek" type="range" min="0" max="1000" value="0" aria-label="Seek">
+      <span id="tdur">0:00</span>
+    </div>
+    <div class="controls">
+      <div class="cgroup">
+        <button class="btn icon-btn" id="restartBtn" aria-label="Replay from the start"><svg class="i"><use href="#i-restart"/></svg></button>
+        <button class="btn playbtn icon-btn" id="playBtn" aria-label="Play"><svg class="i f" id="playIcon"><use href="#i-play"/></svg></button>
+        <div class="vol"><svg class="i"><use href="#i-vol"/></svg><input id="dockVol" type="range" min="0" max="100" value="85" aria-label="Song volume"></div>
+      </div>
+      <div class="cgroup">
+        <button class="btn icon-btn" id="laneBtn" aria-label="Pitch guide" aria-pressed="false"><svg class="i"><use href="#i-wave"/></svg></button>
+        <button class="btn icon-btn" id="micBtn" aria-label="Turn microphone on" aria-pressed="false"><svg class="i"><use href="#i-mic"/></svg></button>
+        <button class="btn icon-btn" id="recbtn" aria-label="Record"><svg class="i f"><use href="#i-rec"/></svg><span id="recTime"></span></button>
+        <button class="btn icon-btn" id="fsBtn" aria-label="Full screen lyrics"><svg class="i"><use href="#i-expand"/></svg></button>
+      </div>
+    </div>
+  </footer>
+  <audio id="song" preload="auto"></audio>
+</section>
+
+<!-- ================= DRAWER ================= -->
+<aside id="panel" aria-label="Mixer and recordings">
+  <div class="phead">
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" id="tabVoices" aria-selected="true">Voices</button>
+      <button class="tab" role="tab" id="tabMic" aria-selected="false">Mic</button>
+      <button class="tab" role="tab" id="tabSong" aria-selected="false">Song</button>
+      <button class="tab" role="tab" id="tabRecs" aria-selected="false">Recordings <span id="recCount"></span></button>
+    </div>
+    <button class="btn icon-btn ghost" id="panelClose" aria-label="Close"><svg class="i"><use href="#i-close"/></svg></button>
+  </div>
+
+  <div class="pbody" id="voicesBody">
+    <div class="group">
+      <h3>What you hear</h3>
+      <div class="chips" id="modeChips">
+        <button class="chip on" data-m="karaoke">Music + female</button>
+        <button class="chip" data-m="music">Music only</button>
+        <button class="chip" data-m="original">Original song</button>
+      </div>
+      <div class="srow"><label for="guide">Male voice as a quiet guide</label><output id="guideO">Off</output><input id="guide" type="range" min="0" max="40" step="5" value="0"></div>
+      <p class="hint" id="detectInfo"></p>
+    </div>
+    <div class="group">
+      <h3>Who sings when</h3>
+      <div id="tl" aria-label="Timeline of male and female voice"></div>
+      <div class="legend"><span><b style="background:var(--male)"></b>Male (removed)</span><span><b style="background:var(--sung)"></b>Female (kept)</span></div>
+      <div id="segEdit" hidden>
+        <div id="segInfo" style="font-size:.92rem"></div>
+        <div class="chips">
+          <button class="btn sm" id="segFlip">Switch male / female</button>
+          <button class="btn sm" id="segSplit">Cut at playhead</button>
+          <button class="btn sm" id="segPlay">Play from here</button>
+        </div>
+      </div>
+      <button class="btn primary" id="applySegs" hidden>Apply my changes</button>
+      <p class="hint">Tap a block to correct it. Where both voices sing at the same moment they cannot be pulled apart: the block is kept or removed as a whole.</p>
+    </div>
+    <div class="group">
+      <h3>Detection</h3>
+      <div class="chips" id="detectChips">
+        <button class="chip on" data-d="auto">Auto</button>
+        <button class="chip" data-d="duet">Duet</button>
+        <button class="chip" data-d="female">Female solo</button>
+        <button class="chip" data-d="male">Male solo</button>
+      </div>
+      <div class="srow"><label for="splitHz">Pitch that separates the voices</label><output id="splitO">Auto</output><input id="splitHz" type="range" min="140" max="400" step="5" value="240"></div>
+      <button class="btn sm" id="redetect">Detect again</button>
+      <p class="hint">Male parts too loud? Slide the pitch lower so more phrases count as male. Female parts missing? Slide it higher.</p>
+    </div>
+  </div>
+
+  <div class="pbody" id="micBody" hidden>
+    <div class="group">
+      <h3>Your microphone</h3>
+      <div class="meter" aria-hidden="true"><i id="meter"></i></div>
+      <div class="switch"><label for="monitor">Hear my voice while singing</label><input id="monitor" type="checkbox" checked></div>
+      <div class="chips" id="fxChips">
+        <button class="chip" data-fx="dry">Dry</button>
+        <button class="chip on" data-fx="studio">Studio</button>
+        <button class="chip" data-fx="hall">Hall</button>
+        <button class="chip" data-fx="stage">Stage</button>
+        <button class="chip" data-fx="echo">Echo</button>
+      </div>
+      <div class="srow"><label for="micVol">Mic volume</label><output id="micVolO">100%</output><input id="micVol" type="range" min="0" max="150" value="100"></div>
+      <div class="srow"><label for="echo">Echo</label><output id="echoO">20%</output><input id="echo" type="range" min="0" max="100" value="20"></div>
+      <div class="srow"><label for="reverb">Reverb</label><output id="reverbO">30%</output><input id="reverb" type="range" min="0" max="100" value="30"></div>
+      <div class="srow"><label for="recSync">Recording sync (late voice fix)</label><output id="recSyncO">0 ms</output><input id="recSync" type="range" min="0" max="500" step="10" value="0"></div>
+      <p class="hint">Use headphones, or the speaker sound feeds back into the mic. If your voice lands late in recordings, raise recording sync until it lines up (about 120 ms for most Bluetooth headphones).</p>
+    </div>
+  </div>
+
+  <div class="pbody" id="songBody" hidden>
+    <div class="group">
+      <h3>Song</h3>
+      <div class="srow"><label for="vol">Song volume</label><output id="volO">85%</output><input id="vol" type="range" min="0" max="100" value="85"></div>
+      <div class="srow"><label for="pitch">Key</label><output id="pitchO">Original</output><input id="pitch" type="range" min="-6" max="6" step="1" value="0"></div>
+      <p class="hint" id="keyHint">Lower the key if the male part is too high for you. The new key takes about 10 to 30 seconds to prepare, once per key.</p>
+      <div class="srow"><label for="offset">Lyrics timing</label><output id="offsetO">In time</output><input id="offset" type="range" min="-3000" max="3000" step="50" value="0"></div>
+      <p class="hint">Lyrics appearing too early? Slide right. Too late? Slide left.</p>
+    </div>
+  </div>
+
+  <div class="pbody" id="recsBody" hidden>
+    <ul id="recs"></ul>
+    <p class="hint" id="recsEmpty">Turn the microphone on and press the red button while the song plays. Your voice is mixed with the music and saved here.</p>
+    <p class="hint">Recordings live in this tab only. Save the ones you want to keep.</p>
+  </div>
+</aside>
+
+<!-- ================= LYRICS DIALOG ================= -->
+<dialog id="lyricsDlg">
+  <div class="dbody">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <h2 style="margin:0;font:700 1.3rem var(--f-lyr)">Lyrics</h2>
+      <button class="btn icon-btn ghost" id="dlgClose" aria-label="Close"><svg class="i"><use href="#i-close"/></svg></button>
+    </div>
+
+    <div class="group">
+      <h3>AI lyrics from the singing</h3>
+      <div class="chips"><button class="btn sm primary" id="aiBtn">Write Hindi lyrics with AI</button><button class="btn sm" id="useAiBtn" hidden>Use the AI lyrics</button><button class="btn sm" id="useOnlineBtn" hidden>Use the online lyrics</button></div>
+      <p class="hint" id="aiStatus">Listens to the isolated vocals and writes Devanagari with timing. Singing is hard to hear, so check the words and fix any mistakes in the box below.</p>
+    </div>
+
+    <div class="group">
+      <h3>Find lyrics online</h3>
+      <div class="two">
+        <label class="field"><span>Song title</span><input class="txt" id="qTitle" placeholder="एक ही ख़्वाब"></label>
+        <label class="field"><span>Singer (optional)</span><input class="txt" id="qArtist" placeholder="Kishore Kumar"></label>
+      </div>
+      <button class="btn primary" id="searchBtn">Search</button>
+      <p class="hint" id="searchStatus"></p>
+      <ul id="results"></ul>
+    </div>
+
+    <div class="group">
+      <h3>Timed lyrics from YouTube captions</h3>
+      <div class="yt-row"><input class="txt" id="capUrl" type="url" inputmode="url" placeholder="YouTube link of the song" aria-label="YouTube link for captions"><button class="btn primary" id="capBtn">Fetch</button></div>
+      <label class="field" id="capTrackWrap" hidden><span>Caption language</span><select class="txt" id="capTrack"></select></label>
+      <p class="hint" id="capStatus">Needs the app server (it is running if you can read this).</p>
+    </div>
+
+    <div class="group">
+      <h3>Edit or paste lyrics</h3>
+      <textarea class="txt" id="paste" placeholder="Hindi lyrics here. Lines that start with a time like [01:23.40] stay in sync, plain lines can be timed below."></textarea>
+      <button class="btn" id="useBtn">Use these lyrics</button>
+    </div>
+
+    <div class="group">
+      <h3>Timing</h3>
+      <div class="chips">
+        <button class="btn sm" id="spreadBtn">Spread evenly over the song</button>
+        <button class="btn sm" id="tapSyncBtn">Tap to sync line by line</button>
+      </div>
+      <p class="hint">Tap to sync is the most accurate for lyrics without times. Play the song and tap as each line starts.</p>
+    </div>
+  </div>
+</dialog>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+'use strict';
+const $ = s => document.querySelector(s);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const once = (el, ev) => new Promise(res => el.addEventListener(ev, res, { once: true }));
+const DEV = /[ऀ-ॿ]/;
+const state = {
+  title: '', artist: '', lines: [], synced: false, idx: -2, offset: 0, dur: 0, songVol: .85, tap: null,
+  song: null, segs: [], notes: [], dirty: false, mode: 'karaoke', key: 0, sel: -1, lyricsSrc: '', file: null, lyricsOn: true,
+  detect: 'auto', online: null, ai: null, aiRunning: false, lane: false
+};
+const song = $('#song'), media = $('#media');
+
+/* ---------------- toast / format ---------------- */
+let toastTimer;
+function toast(msg, ms = 3400) {
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), ms);
+}
+const fmt = s => { s = Math.max(0, Math.floor(s || 0)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+
+/* ================= SERVER API ================= */
+let serverOK = false, feats = {};
+class ApiError extends Error { constructor(m, code) { super(m); this.code = code; } }
+async function api(path, opts) {
+  let r;
+  try { r = await fetch(path, opts); } catch (e) { throw new ApiError('The server is not running. Start it with  python3 server.py', 'noserver'); }
+  let j = null;
+  try { j = await r.json(); } catch (e) { throw new ApiError('The server sent an unexpected answer.', 'noserver'); }
+  if (!r.ok || j.error) throw new ApiError(j.error || 'Failed', j.code || 'failed');
+  return j;
+}
+let curJob = null;
+async function waitJob(jid, onProg) {
+  curJob = jid; let miss = 0;
+  for (;;) {
+    await sleep(700);
+    let j;
+    try { j = await api('/api/job?id=' + jid); miss = 0; }
+    catch (e) { if (e.code === 'noserver' && ++miss < 6) continue; throw e; }
+    if (onProg) onProg(j);
+    if (j.state === 'done') { curJob = null; return j.result; }
+    if (j.state === 'error') { curJob = null; throw new ApiError(j.error || 'Failed', j.code || 'failed'); }
+  }
+}
+async function startJob(path, body) {
+  const j = await api(path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : undefined);
+  return j.job;
+}
+async function pingServer() {
+  const pill = $('#pill'), txt = $('#pillTxt');
+  if (location.protocol === 'file:') {
+    pill.className = 'pill bad'; txt.textContent = 'Open this page from the server';
+    importError('This page was opened as a file. Run  python3 server.py  in the app folder, then open http://localhost:8000');
+    return;
+  }
+  try {
+    const j = await api('/api/ping'); serverOK = true; feats = j.features || {};
+    const miss = [];
+    if (!feats.demucs) miss.push('demucs'); if (!feats.ffmpeg) miss.push('ffmpeg');
+    if (miss.length) { pill.className = 'pill bad'; txt.textContent = 'Missing: ' + miss.join(', '); importError('Install the missing parts: pip install demucs faster-whisper yt-dlp  (and ffmpeg), then restart the server.'); }
+    else {
+      pill.className = 'pill ok';
+      txt.textContent = 'Server ready · ' + (feats.device === 'cuda' ? 'graphics card' : 'processor') + (feats.whisper ? '' : ' · no lyrics AI (pip install faster-whisper)');
+    }
+    $('#optLyrics').disabled = !feats.whisper; if (!feats.whisper) $('#optLyrics').checked = false;
+    loadLibrary();
+  } catch (e) { pill.className = 'pill bad'; txt.textContent = 'Server not running'; importError('Start the server in the app folder:  python3 server.py  and open http://localhost:8000'); }
+}
+function importError(m) { $('#importErr').textContent = m || ''; }
+
+async function loadLibrary() {
+  try {
+    const j = await api('/api/library'), ul = $('#lib'); ul.textContent = '';
+    $('#libCard').hidden = !j.songs.length;
+    j.songs.forEach(s => {
+      const li = document.createElement('li'), b = document.createElement('button'), d = document.createElement('button');
+      b.className = 'open'; b.innerHTML = '<b></b><span></span>'; b.firstChild.textContent = s.title || s.id;
+      b.lastChild.textContent = (s.artist ? s.artist + ' · ' : '') + fmt(s.duration) + (s.duet ? ' · duet' : '');
+      b.onclick = () => openSaved(s.id);
+      d.className = 'btn icon-btn ghost'; d.setAttribute('aria-label', 'Delete ' + s.title); d.innerHTML = '<svg class="i"><use href="#i-trash"/></svg>';
+      d.onclick = async () => { if (confirm('Delete "' + (s.title || s.id) + '" from this computer?')) { await api('/api/delete?id=' + s.id).catch(() => {}); loadLibrary(); } };
+      li.append(b, d); ul.appendChild(li);
+    });
+  } catch (e) { /* library is optional */ }
+}
+
+/* ================= BUSY SCREEN ================= */
+function busyShow(title) {
+  $('#import').hidden = true; $('#player').hidden = true; $('#busy').hidden = false;
+  $('#busyTitle').textContent = title; $('#busyBar').style.width = '0'; $('#busyStage').textContent = 'Starting…'; $('#busyMeta').textContent = '';
+}
+function busyProg(j) {
+  $('#busyBar').style.width = (j.pct || 0) + '%'; $('#busyStage').textContent = j.stage || '';
+  const parts = [(j.pct || 0) + '%', 'elapsed ' + fmt(j.elapsed)]; if (j.eta) parts.push('about ' + fmt(j.eta) + ' left');
+  $('#busyMeta').textContent = parts.join(' · ');
+}
+function busyHide() { $('#busy').hidden = true; }
+$('#busyCancel').onclick = async () => {
+  if (curJob) await api('/api/cancel?id=' + curJob).catch(() => {});
+  $('#busyStage').textContent = 'Cancelling…';
+};
+function backToImport(msg) { busyHide(); $('#player').hidden = true; $('#import').hidden = false; importError(msg || ''); loadLibrary(); }
+
+/* ================= LOADING SONGS ================= */
+function cleanTitle(n) {
+  n = (n || '').replace(/\.[A-Za-z0-9]{2,4}$/, '')
+    .replace(/[(\[][^)\]]*(official|video|lyric|audio|hd|4k|song|full)[^)\]]*[)\]]/gi, ' ')
+    .replace(/snapyt[ _.-]*app|snapyt|y2mate(\.com)?|savefrom(\.net)?|ssyoutube|ytmp3|ytdown/gi, ' ')
+    .replace(/\b(official|full video|lyrical video|lyric video|video song|audio song|hd|4k|1080p|720p)\b/gi, ' ')
+    .replace(/[_.]+/g, ' ');
+  n = /\s/.test(n.trim()) ? n.replace(/\s*-\s*/g, ' ') : n.replace(/-/g, ' ');
+  return n.replace(/\s+/g, ' ').trim().replace(/^[-|\s]+|[-|\s]+$/g, '');
+}
+function uploadFile(f) {
+  return new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest();
+    x.open('POST', '/api/upload?name=' + encodeURIComponent(f.name) + '&lyrics=' + (state.lyricsOn ? 1 : 0));
+    x.upload.onprogress = e => { if (e.lengthComputable) { $('#busyBar').style.width = (e.loaded / e.total * 4) + '%'; $('#busyStage').textContent = 'Sending the file to the server… ' + Math.round(e.loaded / e.total * 100) + '%'; } };
+    x.onload = () => { try { const j = JSON.parse(x.responseText); x.status < 300 && j.job ? resolve(j.job) : reject(new ApiError(j.error || 'Upload failed', j.code)); } catch (e) { reject(new ApiError('The server sent an unexpected answer.', 'noserver')); } };
+    x.onerror = () => reject(new ApiError('The server is not running. Start it with  python3 server.py', 'noserver'));
+    x.send(f);
+  });
+}
+async function loadFile(f) {
+  importError('');
+  if (!f) return;
+  if (!/^(video|audio)\//.test(f.type) && !/\.(mp4|m4a|mp3|wav|webm|ogg|mov|mkv)$/i.test(f.name)) { importError('That file type is not supported. Use MP4, MP3, M4A or WAV.'); return; }
+  if (!serverOK) { await pingServer(); if (!serverOK) return; }
+  state.lyricsOn = $('#optLyrics').checked; state.file = f;
+  busyShow('Preparing "' + (cleanTitle(f.name) || 'your song') + '"');
+  try {
+    const jid = await uploadFile(f);
+    const res = await waitJob(jid, busyProg);
+    await openSong(res, f);
+  } catch (e) { fail(e); }
+}
+async function loadYouTube(url) {
+  importError('');
+  if (!serverOK) { await pingServer(); if (!serverOK) return; }
+  if (!feats.ytdlp) { importError('YouTube needs yt-dlp. Run  pip install yt-dlp  and restart the server.'); return; }
+  state.lyricsOn = $('#optLyrics').checked; state.file = null;
+  busyShow('Downloading from YouTube');
+  try {
+    const jid = await startJob('/api/url', { url, lyrics: state.lyricsOn });
+    await openSong(await waitJob(jid, busyProg), null);
+  } catch (e) { fail(e); }
+}
+async function openSaved(id) {
+  state.lyricsOn = $('#optLyrics').checked; state.file = null;
+  busyShow('Opening your song');
+  try { await openSong(await api('/api/song?id=' + id), null); } catch (e) { fail(e); }
+}
+function fail(e) {
+  if (e.code === 'cancelled') { backToImport('Cancelled.'); return; }
+  backToImport(e.message);
+}
+$('#file').addEventListener('change', e => { loadFile(e.target.files[0]); e.target.value = ''; });
+const drop = $('#drop');
+['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => loadFile(e.dataTransfer.files[0]));
+$('#ytform').addEventListener('submit', e => {
+  e.preventDefault(); const u = $('#yturl').value.trim();
+  if (!ytId(u)) { importError('That does not look like a YouTube link. Paste the full address of the video.'); return; }
+  loadYouTube(u);
+});
+function ytId(u) {
+  try {
+    const x = new URL(u.trim());
+    if (x.hostname.includes('youtu.be')) return x.pathname.slice(1).split('/')[0] || null;
+    if (x.searchParams.get('v')) return x.searchParams.get('v');
+    const m = x.pathname.match(/\/(embed|shorts|live)\/([\w-]{11})/); return m ? m[2] : null;
+  } catch (e) { return null; }
+}
+
+/* ================= AUDIO GRAPH ================= */
+let ctx, srcNode, g = {}, mic = { on: false, stream: null, node: null }, recDest;
+function makeReverbIR(c, secs = 2.2) {
+  const len = Math.floor(c.sampleRate * secs), buf = c.createBuffer(2, len, c.sampleRate);
+  for (let ch = 0; ch < 2; ch++) { const d = buf.getChannelData(ch); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6); }
+  return buf;
+}
+function initAudio() {
+  if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
+  ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
+  recDest = ctx.createMediaStreamDestination();
+  srcNode = ctx.createMediaElementSource(song);
+  g.songOut = ctx.createGain();
+  srcNode.connect(g.songOut); g.songOut.connect(ctx.destination);
+  g.recDelay = ctx.createDelay(1.0); g.songOut.connect(g.recDelay); g.recDelay.connect(recDest);
+  // mic chain: high-pass -> dry + echo + reverb -> level -> monitor + recorder
+  g.micIn = ctx.createGain();
+  const mhp = ctx.createBiquadFilter(); mhp.type = 'highpass'; mhp.frequency.value = 90;
+  g.micIn.connect(mhp);
+  g.micDry = ctx.createGain();
+  const dl = ctx.createDelay(1.5); dl.delayTime.value = 0.3;
+  const fb = ctx.createGain(); fb.gain.value = 0.38;
+  g.echo = ctx.createGain();
+  const conv = ctx.createConvolver(); conv.buffer = makeReverbIR(ctx);
+  g.reverb = ctx.createGain();
+  mhp.connect(g.micDry); mhp.connect(dl); dl.connect(fb); fb.connect(dl); dl.connect(g.echo);
+  mhp.connect(conv); conv.connect(g.reverb);
+  g.micOut = ctx.createGain();
+  g.micDry.connect(g.micOut); g.echo.connect(g.micOut); g.reverb.connect(g.micOut);
+  g.monitor = ctx.createGain();
+  g.micOut.connect(g.monitor); g.monitor.connect(ctx.destination);
+  g.micOut.connect(recDest);
+  g.an = ctx.createAnalyser(); g.an.fftSize = 2048; g.micIn.connect(g.an);
+  applyAudioSettings();
+}
+function applyAudioSettings() {
+  if (!ctx) return;
+  const v = id => +$(id).value;
+  g.songOut.gain.value = state.songVol;
+  g.micOut.gain.value = v('#micVol') / 100;
+  g.echo.gain.value = v('#echo') / 100 * 0.9;
+  g.reverb.gain.value = v('#reverb') / 100 * 1.4;
+  g.monitor.gain.value = $('#monitor').checked ? 1 : 0;
+  g.recDelay.delayTime.value = v('#recSync') / 1000;
+}
+async function toggleMic() {
+  if (mic.on) { stopMic(); return; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    toast('The microphone needs a secure page. Use http://localhost:8000 on this computer, or start the server with  --https  for a phone.', 7000); return;
+  }
+  initAudio();
+  try { mic.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }); }
+  catch (e) { toast('Microphone is blocked. Allow it in the browser address bar and try again.', 5000); return; }
+  mic.node = ctx.createMediaStreamSource(mic.stream); mic.node.connect(g.micIn); mic.on = true;
+  const b = $('#micBtn'); b.classList.add('on'); b.setAttribute('aria-pressed', 'true'); b.setAttribute('aria-label', 'Turn microphone off');
+  score.reset();
+  if ($('#monitor').checked) toast('Mic is on. Put on headphones so you can hear yourself without feedback.', 4200);
+}
+function stopMic() {
+  if (rec) stopRec();
+  mic.stream && mic.stream.getTracks().forEach(t => t.stop());
+  mic.node && mic.node.disconnect(); mic.on = false; mic.stream = null; mic.node = null; userMidi = null;
+  const b = $('#micBtn'); b.classList.remove('on'); b.setAttribute('aria-pressed', 'false'); b.setAttribute('aria-label', 'Turn microphone on');
+  $('#meter').style.width = '0';
+}
+const meterBuf = new Float32Array(2048);
+let userMidi = null, trail = [], lastPitchT = 0;
+function micFrame(now) {
+  if (!mic.on || !g.an) return;
+  g.an.getFloatTimeDomainData(meterBuf);
+  let e = 0; for (let i = 0; i < meterBuf.length; i += 4) e += meterBuf[i] * meterBuf[i];
+  const rms = Math.sqrt(e / (meterBuf.length / 4));
+  $('#meter').style.width = clamp(rms * 600, 0, 100) + '%';
+  if (now - lastPitchT < 33) return;
+  lastPitchT = now;
+  userMidi = rms > 0.012 ? detectPitch(meterBuf, ctx.sampleRate) : null;
+}
+function detectPitch(x, sr) {
+  const N = 1024, minLag = Math.floor(sr / 900), maxLag = Math.min(Math.floor(sr / 70), x.length - N - 1);
+  let e0 = 0; for (let i = 0; i < N; i++) e0 += x[i] * x[i];
+  if (e0 < 1e-6) return null;
+  const c = new Float32Array(maxLag + 2); let best = 0;
+  for (let lag = minLag; lag <= maxLag; lag++) {
+    let s = 0, e1 = 0;
+    for (let i = 0; i < N; i++) { s += x[i] * x[i + lag]; e1 += x[i + lag] * x[i + lag]; }
+    c[lag] = s / Math.sqrt(e0 * e1 + 1e-9); if (c[lag] > best) best = c[lag];
+  }
+  if (best < 0.6) return null;
+  for (let lag = minLag + 1; lag < maxLag; lag++) {
+    if (c[lag] >= 0.88 * best && c[lag] >= c[lag - 1] && c[lag] >= c[lag + 1]) {
+      const a = c[lag - 1], b = c[lag], d = c[lag + 1], den = a - 2 * b + d, sh = Math.abs(den) > 1e-9 ? 0.5 * (a - d) / den : 0;
+      return 69 + 12 * Math.log2(sr / (lag + clamp(sh, -1, 1)) / 440);
+    }
+  }
+  return null;
+}
+
+/* ================= PLAYER ABSTRACTION ================= */
+const P = {
+  time() { return song.currentTime || 0; },
+  dur() { return song.duration || (state.song && state.song.duration) || 0; },
+  playing() { return !song.paused && !song.ended; },
+  async play() { initAudio(); if (ctx.state === 'suspended') await ctx.resume(); await song.play().catch(() => toast('Tap play again to start the song.')); wakeLock(); },
+  pause() { song.pause(); },
+  seek(t) { t = clamp(t, 0, P.dur() || t); song.currentTime = t; if (media.src) { try { media.currentTime = t; } catch (e) {} } }
+};
+let wl = null;
+async function wakeLock() { try { if (navigator.wakeLock && !wl) { wl = await navigator.wakeLock.request('screen'); wl.addEventListener('release', () => wl = null); } } catch (e) {} }
+song.addEventListener('play', () => { if (media.src) media.play().catch(() => {}); });
+song.addEventListener('pause', () => { if (media.src) media.pause(); });
+song.addEventListener('seeked', () => { if (media.src) { try { media.currentTime = song.currentTime; } catch (e) {} } });
+
+/* ---- sources: mode (karaoke / music / original) and key ---- */
+function urlFor(mode, key) {
+  const s = state.song; if (!s) return null;
+  if (!key) return s.urls[mode];
+  return s.shifted && s.shifted[key] && s.shifted[key][mode] || null;
+}
+async function swapSource(url) {
+  const t = song.currentTime, was = P.playing();
+  song.src = url; song.load();
+  await Promise.race([once(song, 'loadedmetadata'), sleep(8000)]);
+  try { song.currentTime = t; } catch (e) {}
+  if (was) P.play();
+}
+function miniShow(txt, pct) { $('#chip').hidden = false; $('#chipTxt').textContent = txt; $('#chipBar').style.width = (pct || 0) + '%'; $('#chipBar').parentElement.hidden = pct == null; }
+function miniHide() { if (!state.aiRunning) $('#chip').hidden = true; else aiChip(); }
+let sourceBusy = false;
+async function applySource() {
+  if (sourceBusy) return; sourceBusy = true;
+  try {
+    for (;;) {
+      const want = { mode: state.mode, key: state.key };
+      let url = urlFor(want.mode, want.key);
+      if (!url) {
+        try {
+          miniShow('Changing the key…', 5);
+          const jid = await startJob('/api/render?id=' + state.song.id + '&st=' + want.key + '&which=' + want.mode);
+          const r = await waitJob(jid, j => miniShow('Changing the key…', j.pct));
+          const s = state.song; s.shifted = s.shifted || {}; (s.shifted[want.key] = s.shifted[want.key] || {})[want.mode] = r.url; url = r.url;
+        } catch (e) { toast('Could not change the key: ' + e.message, 6000); state.key = 0; $('#pitch').value = 0; $('#pitchO').textContent = 'Original'; url = urlFor(want.mode, 0); }
+        miniHide();
+      }
+      await swapSource(url);
+      if (want.mode === state.mode && want.key === state.key) break;
+    }
+  } finally { sourceBusy = false; }
+}
+function setMode(m) {
+  state.mode = m;
+  document.querySelectorAll('#modeChips .chip').forEach(c => c.classList.toggle('on', c.dataset.m === m));
+  applySource();
+}
+document.querySelectorAll('#modeChips .chip').forEach(c => c.onclick = () => setMode(c.dataset.m));
+$('#pitch').addEventListener('input', e => { const v = +e.target.value; $('#pitchO').textContent = v === 0 ? 'Original' : (v > 0 ? '+' : '') + v + ' semitones'; });
+$('#pitch').addEventListener('change', e => { state.key = +e.target.value; applySource(); });
+
+/* ================= OPEN A SONG ================= */
+async function openSong(res, file) {
+  state.song = res; state.title = res.title || cleanTitle(file ? file.name : ''); state.artist = res.artist || '';
+  state.segs = (res.segments || []).map(s => s.slice()); state.notes = (res.notes || []).map(n => n.slice());
+  state.dirty = false; state.sel = -1; state.mode = 'karaoke'; state.key = 0; state.online = res.online_lrc || null; state.ai = res.lyrics_ai || null; state.aiRunning = false;
+  state.detect = res.mode || 'auto';
+  busyHide();
+  $('#player').hidden = false; $('#import').hidden = true;
+  $('#songTitle').textContent = state.title || 'Untitled song'; $('#songArtist').textContent = state.artist || (res.duet ? 'Duet · male voice removed' : '');
+  document.querySelectorAll('#modeChips .chip').forEach(c => c.classList.toggle('on', c.dataset.m === 'karaoke'));
+  $('#pitch').value = 0; $('#pitchO').textContent = 'Original'; $('#guide').value = Math.round((res.guide || 0) * 100); $('#guideO').textContent = (res.guide ? Math.round(res.guide * 100) + '%' : 'Off');
+  if (file) { media.src = URL.createObjectURL(file); media.load(); } else { media.removeAttribute('src'); media.load(); }
+  song.src = res.urls.karaoke; song.load();
+  initAudio();
+  await Promise.race([once(song, 'loadedmetadata'), sleep(8000)]);
+  state.dur = 0; setSongVolume(state.songVol);
+  setLyrics([], false);
+  refreshVoiceUI();
+  chooseLyrics();
+  state.lane = state.notes.length > 0; $('#laneWrap').hidden = !state.lane; $('#laneBtn').classList.toggle('on', state.lane);
+  if (!$('#paste')._touched) $('#paste').value = '';
+  requestAnimationFrame(loop);
+  if (res.duet) toast('Duet found. The male voice is removed. You sing the lines tagged YOU.', 6000);
+  else if (!res.female_ok) toast('This sounds like a male solo, so the voice is removed everywhere. Open Mixer > Voices to change that.', 7000);
+  else toast('One singer found, so the voice stays. Open Mixer > Voices if this is a duet.', 6000);
+}
+function applyResult(res, keepLyrics) {
+  state.song = Object.assign(state.song || {}, res);
+  state.segs = (res.segments || []).map(s => s.slice()); state.notes = (res.notes || []).map(n => n.slice()); state.dirty = false; state.sel = -1;
+  state.detect = res.mode || state.detect;
+  refreshVoiceUI(); relabelLines();
+  if (!keepLyrics && res.lyrics_ai) state.ai = res.lyrics_ai;
+}
+
+/* ================= VOICES: timeline editor ================= */
+function labelAt(t) {
+  const S = state.segs; let lo = 0, hi = S.length - 1, r = -1;
+  while (lo <= hi) { const m = (lo + hi) >> 1; if (S[m][0] <= t) { r = m; lo = m + 1; } else hi = m - 1; }
+  return r >= 0 ? S[r][2] : 'f';
+}
+function isYours(label) { const s = state.song; return !s || s.duet || !s.female_ok ? label === 'm' : true; }
+function refreshVoiceUI() {
+  const s = state.song; if (!s) return;
+  const el = $('#tl'); el.textContent = '';
+  const d = P.dur() || s.duration || 1;
+  state.segs.forEach((sg, i) => {
+    const b = document.createElement('div'); b.className = 's ' + sg[2] + (i === state.sel ? ' sel' : '');
+    b.style.left = (sg[0] / d * 100) + '%'; b.style.width = Math.max(0.2, (sg[1] - sg[0]) / d * 100) + '%'; b.dataset.i = i; el.appendChild(b);
+  });
+  const ph = document.createElement('div'); ph.className = 'ph'; ph.id = 'tlph'; ph.style.left = '0'; el.appendChild(ph);
+  const info = $('#detectInfo');
+  if (s.duet) info.textContent = 'Duet found: male voice around ' + s.male_hz + ' Hz, female around ' + s.female_hz + ' Hz.';
+  else if (!s.female_ok) info.textContent = 'Sounds like one male singer (' + (s.male_hz || '?') + ' Hz), so the voice is removed everywhere.';
+  else info.textContent = 'Sounds like one female singer (' + (s.female_hz || '?') + ' Hz), so her voice stays.';
+  document.querySelectorAll('#detectChips .chip').forEach(c => c.classList.toggle('on', c.dataset.d === state.detect));
+  if (s.split_hz) $('#splitHz').value = s.split_hz; $('#splitO').textContent = s.split_hz ? s.split_hz + ' Hz' : 'Auto';
+  $('#applySegs').hidden = !state.dirty;
+  const sg = state.segs[state.sel];
+  $('#segEdit').hidden = !sg;
+  if (sg) $('#segInfo').textContent = fmt(sg[0]) + ' to ' + fmt(sg[1]) + ' · now ' + (sg[2] === 'f' ? 'female (kept)' : 'male (removed)');
+  state.notes.forEach(n => { n.who = labelAt((n[0] + n[1]) / 2); });
+}
+$('#tl').addEventListener('click', e => {
+  const b = e.target.closest('.s'); if (!b) return;
+  state.sel = +b.dataset.i; refreshVoiceUI();
+});
+$('#segFlip').onclick = () => { const sg = state.segs[state.sel]; if (!sg) return; sg[2] = sg[2] === 'f' ? 'm' : 'f'; mergeSegs(); state.dirty = true; refreshVoiceUI(); relabelLines(); };
+$('#segSplit').onclick = () => {
+  const t = P.time(), sg = state.segs[state.sel];
+  if (!sg || t <= sg[0] + 0.2 || t >= sg[1] - 0.2) { toast('Pick a block, then play to the spot inside it where the singer changes.'); return; }
+  state.segs.splice(state.sel + 1, 0, [t, sg[1], sg[2] === 'f' ? 'm' : 'f']); sg[1] = t; state.sel++; state.dirty = true; refreshVoiceUI(); relabelLines();
+};
+$('#segPlay').onclick = () => { const sg = state.segs[state.sel]; if (sg) { P.seek(Math.max(0, sg[0] - 0.5)); P.play(); } };
+function mergeSegs() {
+  const S = state.segs; let k = 0, sel = state.sel;
+  while (k + 1 < S.length) { if (S[k][2] === S[k + 1][2]) { S[k][1] = S[k + 1][1]; S.splice(k + 1, 1); if (sel > k) sel--; } else k++; }
+  state.sel = Math.min(sel, S.length - 1);
+}
+async function remix() {
+  const s = state.song, guide = +$('#guide').value / 100;
+  miniShow('Applying your changes…', 5);
+  try {
+    const jid = await startJob('/api/remix', { id: s.id, segments: state.segs.map(x => [x[0], x[1], x[2]]), guide });
+    const res = await waitJob(jid, j => miniShow('Applying your changes…', j.pct));
+    s.shifted = {}; applyResult(res, true); state.song.guide = guide;
+    await applySource(); toast('Done. The new mix is playing.');
+  } catch (e) { toast('Could not apply: ' + e.message, 6000); }
+  miniHide();
+}
+$('#applySegs').onclick = remix;
+$('#guide').addEventListener('input', e => { const v = +e.target.value; $('#guideO').textContent = v ? v + '%' : 'Off'; });
+$('#guide').addEventListener('change', remix);
+async function redetect() {
+  const hz = $('#splitHz')._touched ? +$('#splitHz').value : null, s = state.song;
+  miniShow('Finding the voices again…', 5);
+  try {
+    const jid = await startJob('/api/split?id=' + s.id + '&mode=' + state.detect + (hz ? '&hz=' + hz : ''));
+    const res = await waitJob(jid, j => miniShow('Finding the voices again…', j.pct));
+    s.shifted = {}; applyResult(res, true); $('#splitHz')._touched = false; await applySource(); toast('Voices detected again.');
+  } catch (e) { toast('Could not detect: ' + e.message, 6000); }
+  miniHide();
+}
+$('#redetect').onclick = redetect;
+$('#splitHz').addEventListener('input', e => { e.target._touched = true; $('#splitO').textContent = e.target.value + ' Hz'; });
+document.querySelectorAll('#detectChips .chip').forEach(c => c.onclick = () => { state.detect = c.dataset.d; $('#splitHz')._touched = false; document.querySelectorAll('#detectChips .chip').forEach(x => x.classList.toggle('on', x === c)); redetect(); });
+
+/* ================= LYRICS ================= */
+function parseLRC(txt) {
+  const out = [];
+  for (const raw of txt.split(/\r?\n/)) {
+    const tags = [...raw.matchAll(/\[(\d+):(\d+(?:[.:]\d+)?)\]/g)];
+    if (!tags.length) continue;
+    const text = raw.replace(/\[[^\]]*\]/g, '').replace(/<[\d:.]+>/g, '').replace(/\s+/g, ' ').trim();
+    for (const m of tags) out.push({ t: (+m[1]) * 60 + parseFloat(m[2].replace(':', '.')), text });
+  }
+  out.sort((a, b) => a.t - b.t);
+  return out;
+}
+function makeSynced(entries) {
+  const lines = [];
+  entries.forEach((e, i) => { if (!e.text) return; const next = entries[i + 1]; lines.push({ t: e.t, e: next ? next.t : e.t + 5, text: e.text }); });
+  return lines;
+}
+function makePlain(txt) { return txt.split(/\r?\n/).map(s => s.replace(/\[[^\]]*\]/g, '').replace(/\s+/g, ' ').trim()).filter(Boolean).map(text => ({ t: null, e: null, text })); }
+function aiToLines(ai) { return (ai || []).map(l => ({ t: l.t, e: l.e, text: l.text, wt: l.words.map(w => ({ s: w.s, e: w.e })) })); }
+function timeWords(l) {
+  const ws = l.text.split(' ').filter(Boolean);
+  if (l.wt && l.wt.length === ws.length && l.t != null) {
+    const span = Math.max(l.wt[l.wt.length - 1].e, l.t + .8) - l.t; l.span = span;
+    l.words = ws.map((w, i) => ({ w, f0: (l.wt[i].s - l.t) / span, f1: Math.max((l.wt[i].e - l.t) / span, (l.wt[i].s - l.t) / span + .02) }));
+    return;
+  }
+  const wt = ws.map(w => Array.from(w).length + .6);
+  const sum = wt.reduce((a, b) => a + b, 0); let acc = 0;
+  l.words = ws.map((w, i) => { const f0 = acc / sum; acc += wt[i]; return { w, f0, f1: acc / sum }; });
+  if (l.t != null) l.span = clamp((l.e - l.t) - .15, .8, 9);
+}
+function setLyrics(lines, synced) {
+  state.lines = lines; state.synced = synced && lines.length > 0 && lines.every(l => l.t != null);
+  lines.forEach(timeWords);
+  renderLines();
+}
+function lineWho(l) {
+  const s = state.song; if (!s || !s.duet || l.t == null || !state.segs.length) return '';
+  const a = l.t, b = Math.max(l.e || l.t + 2, a + .5); let f = 0;
+  for (const sg of state.segs) { if (sg[2] === 'f') f += Math.max(0, Math.min(b, sg[1]) - Math.max(a, sg[0])); }
+  return f / (b - a) > 0.5 ? 'orig' : 'you';
+}
+let kids = [], curWords = [];
+function relabelLines() {
+  if (kids.length !== state.lines.length) { renderLines(); return; }
+  state.lines.forEach((l, i) => { const w = lineWho(l); kids[i].dataset.who = w; const tg = kids[i].querySelector('.tag'); if (tg) tg.remove(); if (w) kids[i].prepend(mkTag(w)); });
+}
+function mkTag(w) { const t = document.createElement('span'); t.className = 'tag ' + w; t.textContent = w === 'you' ? 'you' : 'original'; return t; }
+function renderLines() {
+  const track = $('#track'); track.textContent = '';
+  state.lines.forEach(l => {
+    const d = document.createElement('div'); d.className = 'line'; const w = lineWho(l); if (w) { d.dataset.who = w; d.appendChild(mkTag(w)); }
+    l.words.forEach((w, i) => {
+      const s = document.createElement('span'); s.className = 'w'; s.textContent = w.w; d.appendChild(s);
+      if (i < l.words.length - 1) d.appendChild(document.createTextNode(' '));
+    });
+    track.appendChild(d);
+  });
+  kids = [...track.children]; state.idx = -2; curWords = [];
+  const none = !state.lines.length;
+  $('#lyrics').classList.toggle('static', !state.synced);
+  $('#empty').hidden = !none;
+  if (none) {
+    const wait = state.aiRunning;
+    $('#emptyMsg').innerHTML = wait ? '<b style="font:700 1.3rem var(--f-lyr);color:var(--text)">Writing the Hindi lyrics…</b><span>You can start singing now. The words appear here when they are ready.</span>'
+      : '<b style="font:700 1.3rem var(--f-lyr);color:var(--text)">No lyrics yet</b><span>Let the AI write them from the singing, search online, or paste your own.</span><button class="btn primary" id="emptyBtn">Add lyrics</button>';
+    const eb = $('#emptyBtn'); if (eb) eb.onclick = openLyrics;
+  }
+  updateBanner();
+  if (state.synced) paintClasses(findIdx(P.time() - state.offset));
+}
+function findIdx(te) {
+  const L = state.lines; let lo = 0, hi = L.length - 1, r = -1;
+  while (lo <= hi) { const m = (lo + hi) >> 1; if (L[m].t <= te) { r = m; lo = m + 1; } else hi = m - 1; }
+  return r;
+}
+function paintClasses(c) {
+  const prev = state.idx; state.idx = c;
+  if (prev >= 0 && kids[prev]) [...kids[prev].querySelectorAll('.w')].forEach(w => w.style.removeProperty('--p'));
+  kids.forEach((el, i) => { const d = i - c; el.className = 'line ' + (d < 0 ? 'past' : d === 0 ? 'cur' : d === 1 ? 'nx1' : d === 2 ? 'nx2' : 'far'); });
+  curWords = c >= 0 && kids[c] ? [...kids[c].querySelectorAll('.w')] : [];
+  layoutLyrics();
+}
+function layoutLyrics() {
+  if (!state.synced) return;
+  const L = $('#lyrics'), el = kids[Math.max(state.idx, 0)]; if (!el) return;
+  $('#track').style.transform = `translateY(${L.clientHeight * 0.4 - (el.offsetTop + el.offsetHeight / 2)}px)`;
+}
+function updateLyrics(te) {
+  if (!state.synced) return;
+  const i = findIdx(te);
+  if (i !== state.idx) paintClasses(i);
+  if (i >= 0) {
+    const l = state.lines[i], f = (te - l.t) / l.span;
+    for (let k = 0; k < curWords.length; k++) { const w = l.words[k]; if (w) curWords[k].style.setProperty('--p', clamp((f - w.f0) / (w.f1 - w.f0), 0, 1).toFixed(3)); }
+  }
+}
+function spreadEvenly() {
+  const d = P.dur(); if (!state.lines.length || !d) { toast('Load the song first so its length is known.'); return; }
+  const intro = Math.min(12, d * .08), outro = Math.min(10, d * .06), total = d - intro - outro;
+  const wt = state.lines.map(l => Array.from(l.text).length + 8), sum = wt.reduce((a, b) => a + b, 0);
+  let acc = intro;
+  state.lines.forEach((l, i) => { l.wt = null; l.t = acc; acc += total * wt[i] / sum; l.e = acc; });
+  setLyrics(state.lines, true);
+  toast('Lyrics spread over the song. Use Lyrics timing in the mixer, or tap to sync for better accuracy.', 5000);
+}
+function updateBanner() {
+  const b = $('#banner');
+  if (state.lines.length && !state.synced) {
+    b.hidden = false;
+    b.innerHTML = '<span>These lyrics have no timing yet.</span><button class="btn sm primary" id="bTap">Tap to sync</button><button class="btn sm" id="bSpread">Spread evenly</button>';
+    $('#bTap').onclick = startTap; $('#bSpread').onclick = spreadEvenly;
+  } else b.hidden = true;
+}
+/* which lyrics to show: online synced Hindi first, then the AI lyrics */
+function chooseLyrics() {
+  const s = state.song;
+  if (state.online) { const lines = makeSynced(parseLRC(state.online)); if (lines.length) { state.lyricsSrc = 'online'; setLyrics(lines, true); lyricsButtons(); return; } }
+  if (state.ai && state.ai.length) { state.lyricsSrc = 'ai'; setLyrics(aiToLines(state.ai), true); lyricsButtons(); return; }
+  state.lyricsSrc = '';
+  if (state.lyricsOn && feats.whisper && s.lyrics_state !== 'failed' && s.lyrics_state !== 'empty') startAiLyrics(true);
+  else setLyrics([], false);
+}
+function lyricsButtons() { $('#useAiBtn').hidden = !(state.ai && state.ai.length) || state.lyricsSrc === 'ai'; $('#useOnlineBtn').hidden = !state.online || state.lyricsSrc === 'online'; }
+function aiChip(pct) { $('#chip').hidden = false; $('#chipTxt').textContent = 'Writing lyrics' + (pct != null ? ' ' + pct + '%' : '…'); $('#chipBar').style.width = (pct || 0) + '%'; $('#chipBar').parentElement.hidden = pct == null; }
+async function startAiLyrics(auto) {
+  if (state.aiRunning) return;
+  if (!feats.whisper) { toast('Install the lyrics AI first:  pip install faster-whisper  and restart the server.', 7000); return; }
+  const s = state.song; if (!s) return;
+  state.aiRunning = true; aiChip(0); $('#aiStatus').textContent = 'Writing lyrics… you can keep singing meanwhile.'; $('#aiBtn').disabled = true;
+  if (!state.lines.length) renderLines();
+  try {
+    const jid = await startJob('/api/lyrics?id=' + s.id);
+    const res = await waitJob(jid, j => { aiChip(j.pct); $('#aiStatus').textContent = (j.stage || 'Working') + ' ' + (j.pct || 0) + '%'; });
+    if (state.song !== s) return;
+    state.ai = res.lyrics_ai || []; s.lyrics_state = res.lyrics_state;
+    if (!state.ai.length) { $('#aiStatus').textContent = 'The AI could not hear Hindi words in this song. Search online or paste the lyrics.'; if (!auto) toast('No lyrics found by the AI.'); }
+    else {
+      $('#aiStatus').textContent = 'Wrote ' + state.ai.length + ' lines. Check the words and fix mistakes in the box below.';
+      if (!state.lines.length || state.lyricsSrc === 'ai' || !state.lyricsSrc) { state.lyricsSrc = 'ai'; setLyrics(aiToLines(state.ai), true); toast('Hindi lyrics are ready.'); }
+      else toast('AI lyrics are ready. Open Lyrics to switch to them.');
+    }
+  } catch (e) {
+    if (state.song === s) { $('#aiStatus').textContent = 'AI lyrics failed: ' + e.message; if (!state.lines.length) setLyrics([], false); if (e.code !== 'cancelled') toast('Lyrics AI: ' + e.message, 7000); }
+  } finally { state.aiRunning = false; $('#aiBtn').disabled = false; $('#chip').hidden = true; lyricsButtons(); if (!state.lines.length) renderLines(); }
+}
+$('#aiBtn').onclick = () => { $('#lyricsDlg').close(); startAiLyrics(false); };
+$('#useAiBtn').onclick = () => { state.lyricsSrc = 'ai'; setLyrics(aiToLines(state.ai), true); $('#lyricsDlg').close(); lyricsButtons(); };
+$('#useOnlineBtn').onclick = () => { state.lyricsSrc = 'online'; setLyrics(makeSynced(parseLRC(state.online)), true); $('#lyricsDlg').close(); lyricsButtons(); };
+
+/* ---- tap to sync ---- */
+function startTap() {
+  if (!state.lines.length) { openLyrics(); return; }
+  if ($('#lyricsDlg').open) $('#lyricsDlg').close();
+  state.lines.forEach(l => { l.t = null; l.e = null; l.wt = null; });
+  state.tap = { i: 0 }; $('#tap').hidden = false; $('#banner').hidden = true;
+  P.seek(0); P.play(); tapUI();
+}
+function tapUI() {
+  const L = state.lines, i = state.tap.i;
+  $('#tapCount').textContent = `Line ${Math.min(i + 1, L.length)} of ${L.length}`;
+  $('#tapCur').textContent = i < L.length ? L[i].text : 'All lines timed';
+  $('#tapNext').textContent = L[i + 1] ? L[i + 1].text : '';
+}
+function tapNow() {
+  if (!state.tap) return; const L = state.lines;
+  if (state.tap.i >= L.length) { finishTap(); return; }
+  L[state.tap.i].t = P.time(); state.tap.i++; tapUI();
+  if (state.tap.i >= L.length) finishTap();
+}
+function finishTap() {
+  const L = state.lines, d = P.dur(), done = state.tap.i;
+  if (done < L.length) {
+    const start = done ? L[done - 1].t + 3 : 0, rest = L.length - done, step = Math.max(2, (d - start - 4) / rest);
+    for (let k = done; k < L.length; k++) L[k].t = start + (k - done) * step;
+  }
+  L.forEach((l, i) => { l.e = L[i + 1] ? L[i + 1].t : l.t + 5; });
+  state.tap = null; $('#tap').hidden = true; setLyrics(L, true); toast('Timing saved. Press play from the start to check it.');
+}
+$('#tapbtn').onclick = tapNow;
+$('#tapUndo').onclick = () => { if (state.tap && state.tap.i > 0) { state.tap.i--; state.lines[state.tap.i].t = null; tapUI(); } };
+$('#tapDone').onclick = () => { if (state.tap) finishTap(); };
+
+/* ---- online search (LRCLIB) ---- */
+async function searchLyrics(q) {
+  const r = await fetch('https://lrclib.net/api/search?q=' + encodeURIComponent(q));
+  if (!r.ok) throw new Error('search failed');
+  return r.json();
+}
+function rank(list) {
+  const d = P.dur();
+  return list.filter(x => x.syncedLyrics || x.plainLyrics).map(x => {
+    let s = 0;
+    if (x.syncedLyrics) s += 5;
+    if (DEV.test(x.syncedLyrics || x.plainLyrics)) s += 3;
+    if (d && x.duration && Math.abs(x.duration - d) < 4) s += 4; else if (d && x.duration && Math.abs(x.duration - d) < 10) s += 1;
+    return { x, s };
+  }).sort((a, b) => b.s - a.s).map(o => o.x);
+}
+function applyResultLyrics(x) {
+  if (x.syncedLyrics) { setLyrics(makeSynced(parseLRC(x.syncedLyrics)), true); toast('Synced lyrics loaded.'); }
+  else { setLyrics(makePlain(x.plainLyrics), false); toast('Lyrics loaded without timing. Tap to sync or spread them evenly.', 4500); }
+  state.lyricsSrc = 'manual';
+  if (!DEV.test(x.syncedLyrics || x.plainLyrics)) toast('These lyrics are in Roman letters. Search again with the Hindi title, for example तुम ही हो.', 6000);
+  if ($('#lyricsDlg').open) $('#lyricsDlg').close();
+}
+async function dialogSearch() {
+  const q = ($('#qTitle').value + ' ' + $('#qArtist').value).trim(), st = $('#searchStatus'), ul = $('#results');
+  if (!q) { st.textContent = 'Type the song title first.'; return; }
+  st.textContent = 'Searching…'; ul.textContent = '';
+  try {
+    const res = rank(await searchLyrics(q)).slice(0, 8);
+    st.textContent = res.length ? 'Pick the right one. Hindi lyrics with timing are listed first.' : 'Nothing found. Try the Hindi title or fewer words.';
+    res.forEach(x => {
+      const li = document.createElement('li'), b = document.createElement('button');
+      const left = document.createElement('span'); left.textContent = `${x.trackName} · ${x.artistName}`;
+      const right = document.createElement('span'); right.style.cssText = 'display:flex;gap:6px;flex:none';
+      const dev = DEV.test(x.syncedLyrics || x.plainLyrics);
+      right.innerHTML = (x.syncedLyrics ? '<span class="badge ok">synced</span>' : '<span class="badge">no timing</span>') + (dev ? '<span class="badge ok">हिन्दी</span>' : '<span class="badge">roman</span>');
+      b.append(left, right); b.onclick = () => applyResultLyrics(x); li.appendChild(b); ul.appendChild(li);
+    });
+  } catch (e) { st.textContent = 'Could not reach the lyrics service. Check your connection, or paste the lyrics below.'; }
+}
+let pasteAuto = true;
+function openLyrics() {
+  $('#qTitle').value = state.title; $('#qArtist').value = state.artist;
+  const vid = state.song && state.song.id && /^yt-/.test(state.song.id) ? state.song.id.slice(3) : null;
+  if (vid && !$('#capUrl').value) $('#capUrl').value = 'https://youtu.be/' + vid;
+  $('#aiBtn').hidden = !feats.whisper; lyricsButtons();
+  const pa = $('#paste');
+  if (state.lines.length && state.synced && (pasteAuto || !pa.value.trim())) { pa.value = toLRC(state.lines); pasteAuto = true; }
+  $('#lyricsDlg').showModal();
+}
+$('#paste').addEventListener('input', function () { pasteAuto = false; this._touched = true; });
+$('#lyricsBtn').onclick = openLyrics;
+$('#dlgClose').onclick = () => $('#lyricsDlg').close();
+$('#searchBtn').onclick = dialogSearch;
+$('#qTitle').addEventListener('keydown', e => { if (e.key === 'Enter') dialogSearch(); });
+$('#useBtn').onclick = () => {
+  const t = $('#paste').value.trim(); if (!t) { toast('Paste some lyrics first.'); return; }
+  const entries = parseLRC(t);
+  if (entries.length >= 2) setLyrics(makeSynced(entries), true); else setLyrics(makePlain(t), false);
+  state.lyricsSrc = 'manual'; $('#lyricsDlg').close();
+  toast(state.synced ? 'Synced lyrics loaded.' : 'Lyrics loaded. Now time them with Tap to sync or Spread evenly.', 4500);
+};
+$('#spreadBtn').onclick = () => { if (!state.lines.length) { toast('Add lyrics first.'); return; } $('#lyricsDlg').close(); spreadEvenly(); };
+$('#tapSyncBtn').onclick = startTap;
+
+/* ---- YouTube captions via the server ---- */
+const JUNK = /^[\s\[\(♪♫♬♩]*(music|संगीत|म्यूजिक|applause|तालियां|instrumental)?[\s\]\)♪♫♬♩]*$/i;
+function parseJson3(j) {
+  const rows = [];
+  for (const e of (j && j.events) || []) {
+    if (!e.segs || e.tStartMs == null) continue;
+    const start = e.tStartMs / 1000, end = start + (e.dDurationMs || 3000) / 1000;
+    const segs = e.segs.map(x => ({ text: x.utf8 || '', s: start + (x.tOffsetMs || 0) / 1000 }));
+    segs.forEach((x, i) => { x.e = i + 1 < segs.length ? segs[i + 1].s : (segs.length > 1 ? Math.min(end, x.s + .9) : end); if (x.e <= x.s) x.e = x.s + .3; });
+    let row = [];
+    const flush = () => { if (row.length) rows.push(row); row = []; };
+    for (const x of segs) {
+      const total = x.text.split(/\s+/).filter(Boolean).length || 1, d = (x.e - x.s) / total; let k = 0;
+      x.text.split('\n').forEach((part, pi) => { if (pi > 0) flush(); part.split(/\s+/).filter(Boolean).forEach(w => { row.push({ w, s: x.s + d * k, e: x.s + d * (k + 1) }); k++; }); });
+    }
+    flush();
+  }
+  const lines = rows.map(r => ({ t: r[0].s, e: r[r.length - 1].e, text: r.map(x => x.w).join(' '), wt: r.map(x => ({ s: x.s, e: x.e })) })).filter(l => l.text && !JUNK.test(l.text)).sort((a, b) => a.t - b.t);
+  const out = [];
+  for (const l of lines) {
+    const p = out[out.length - 1];
+    if (out.slice(-4).some(q => q.text === l.text && Math.abs(q.t - l.t) < 4)) continue;
+    const grow = p && l.t - p.t < 4 && l.text.startsWith(p.text) ? out.length - 1 : -1;
+    if (grow >= 0) { out[grow] = l; continue; }
+    if (p && l.t < p.e) p.e = Math.max(l.t, p.t + .3);
+    out.push(l);
+  }
+  return out;
+}
+function toLRC(lines) {
+  return lines.filter(l => l.t != null).map(l => {
+    const c = Math.round(l.t * 100), pad = (n, k = 2) => String(n).padStart(k, '0');
+    return `[${pad(Math.floor(c / 6000))}:${pad(Math.floor((c % 6000) / 100))}.${pad(c % 100)}]${l.text}`;
+  }).join('\n');
+}
+function capMsg(e) {
+  return ({ noserver: e.message, nocaps: 'This video has no captions or subtitles to read. Try the AI lyrics or the lyrics search.', empty: 'The captions had no usable lyrics, only [Music] marks.', blocked: 'YouTube would not hand over captions from this computer. Run  pip install yt-dlp  and restart the server.' })[e.code] || ('Could not get captions: ' + e.message);
+}
+function fillTracks(j) {
+  const sel = $('#capTrack'); sel.textContent = '';
+  (j.tracks || []).forEach(t => { const o = document.createElement('option'); o.value = t.key; o.textContent = t.label; if (t.key === j.chosen) o.selected = true; sel.appendChild(o); });
+  $('#capTrackWrap').hidden = (j.tracks || []).length < 2;
+}
+async function dialogCaptions(track) {
+  const id = ytId($('#capUrl').value), st = $('#capStatus');
+  if (!id) { st.textContent = 'Paste the full YouTube link first.'; return; }
+  st.textContent = 'Fetching captions…';
+  try {
+    const j = await api('/api/captions?v=' + encodeURIComponent(id) + (track ? '&track=' + encodeURIComponent(track) : ''));
+    const lines = parseJson3(j.json3);
+    if (!lines.length) throw new ApiError('empty', 'empty');
+    fillTracks(j); setLyrics(lines, true); state.lyricsSrc = 'manual';
+    const label = ((j.tracks || []).find(t => t.key === j.chosen) || {}).label || 'captions';
+    st.textContent = `Loaded ${lines.length} timed lines (${label}).`;
+    if (!track) { $('#lyricsDlg').close(); toast(`Lyrics loaded from YouTube captions (${label}). If they run early or late, use Lyrics timing in the mixer.`, 5500); }
+  } catch (e) { st.textContent = capMsg(e); }
+}
+$('#capBtn').onclick = () => dialogCaptions('');
+$('#capTrack').onchange = e => dialogCaptions(e.target.value);
+
+/* ================= PITCH LANE + SCORE ================= */
+const lane = $('#lane'), lx = lane.getContext('2d');
+let laneLo = 48, laneHi = 72;
+const score = {
+  hit: 0, n: 0, reset() { this.hit = 0; this.n = 0; $('#score').hidden = true; },
+  tick(t) {
+    if (!mic.on || !P.playing()) return;
+    const n = noteAt(t); if (!n || !isYours(n.who)) return;
+    this.n++;
+    if (userMidi != null) { let d = Math.abs(((userMidi - n[2]) % 12 + 18) % 12 - 6); d = 6 - d; if (d <= 1.5) this.hit++; }
+    if (this.n > 30) { const el = $('#score'); el.hidden = false; el.textContent = '★ ' + Math.round(100 * this.hit / this.n); }
+  }
+};
+function noteIdx(t) { const N = state.notes; let lo = 0, hi = N.length - 1, r = -1; while (lo <= hi) { const m = (lo + hi) >> 1; if (N[m][0] <= t) { r = m; lo = m + 1; } else hi = m - 1; } return r; }
+function noteAt(t) { const i = noteIdx(t); if (i < 0) return null; for (let k = i; k >= Math.max(0, i - 3); k--) { const n = state.notes[k]; if (t >= n[0] && t <= n[1]) return n; } return null; }
+function sizeLane() {
+  const r = lane.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  if (lane.width !== Math.round(r.width * dpr) || lane.height !== Math.round(r.height * dpr)) { lane.width = Math.round(r.width * dpr); lane.height = Math.round(r.height * dpr); }
+  lx.setTransform(dpr, 0, 0, dpr, 0, 0); return [r.width, r.height];
+}
+function drawLane(t) {
+  if (!state.lane) return;
+  const [w, h] = sizeLane(); lx.clearRect(0, 0, w, h);
+  const back = 2.2, ahead = 6.3, span = back + ahead, nowX = w * back / span, X = tt => (tt - (t - back)) / span * w;
+  const N = state.notes; let i = Math.max(0, noteIdx(t - back - 3)), lo = 999, hi = -999; const vis = [];
+  for (; i < N.length && N[i][0] < t + ahead; i++) { if (N[i][1] > t - back) { vis.push(N[i]); if (isYours(N[i].who)) { lo = Math.min(lo, N[i][2]); hi = Math.max(hi, N[i][2]); } } }
+  if (lo > hi) { for (const n of vis) { lo = Math.min(lo, n[2]); hi = Math.max(hi, n[2]); } }
+  if (lo <= hi) { const tl = lo - 4, th = Math.max(hi + 4, tl + 12); laneLo += (tl - laneLo) * .08; laneHi += (th - laneHi) * .08; }
+  const Y = m => h - 10 - (m - laneLo) / (laneHi - laneLo) * (h - 20);
+  lx.strokeStyle = 'rgba(255,255,255,.05)'; lx.lineWidth = 1;
+  for (let m = Math.ceil(laneLo); m < laneHi; m++) { if (m % 12 === 0) { lx.beginPath(); lx.moveTo(0, Y(m)); lx.lineTo(w, Y(m)); lx.stroke(); } }
+  for (const n of vis) {
+    const you = isYours(n.who), x1 = X(n[0]), x2 = Math.max(x1 + 4, X(n[1])), y = Y(n[2]);
+    lx.fillStyle = you ? '#ffb724' : 'rgba(150,160,230,.35)';
+    lx.globalAlpha = n[1] < t ? .45 : 1;
+    lx.beginPath(); lx.roundRect ? lx.roundRect(x1, y - 5, x2 - x1, 10, 5) : lx.rect(x1, y - 5, x2 - x1, 10); lx.fill(); lx.globalAlpha = 1;
+  }
+  lx.strokeStyle = 'rgba(255,255,255,.7)'; lx.lineWidth = 2; lx.beginPath(); lx.moveTo(nowX, 4); lx.lineTo(nowX, h - 4); lx.stroke();
+  if (mic.on) {
+    const tg = noteAt(t); let m = userMidi;
+    if (m != null && tg) m = m + 12 * Math.round((tg[2] - m) / 12);
+    trail.push({ t, m }); while (trail.length && trail[0].t < t - back) trail.shift();
+    lx.fillStyle = '#43d9ff';
+    for (const p of trail) { if (p.m == null) continue; lx.globalAlpha = .35 + .65 * (1 - (t - p.t) / back); lx.beginPath(); lx.arc(X(p.t), clamp(Y(p.m), 6, h - 6), 3.2, 0, 7); lx.fill(); }
+    lx.globalAlpha = 1;
+  }
+  $('#laneHint').textContent = !mic.on ? 'Turn the mic on to see your pitch and score' : '';
+}
+$('#laneBtn').onclick = () => { state.lane = !state.lane; $('#laneWrap').hidden = !state.lane; $('#laneBtn').classList.toggle('on', state.lane); setTimeout(layoutLyrics, 60); };
+
+/* ================= LOOP / UI ================= */
+let lastSec = -1, seeking = false, lastSync = 0;
+function loop(now) {
+  if (!state.song || $('#player').hidden) return;
+  requestAnimationFrame(loop);
+  const t = P.time(), d = P.dur();
+  if (d && d !== state.dur) { state.dur = d; $('#tdur').textContent = fmt(d); refreshVoiceUI(); }
+  if (!seeking && d) $('#seek').value = Math.round(t / d * 1000);
+  const s = Math.floor(t); if (s !== lastSec) { lastSec = s; $('#tcur').textContent = fmt(t); }
+  const pl = P.playing(), ic = $('#playIcon');
+  if (ic.dataset.p !== String(pl)) { ic.dataset.p = String(pl); ic.firstElementChild.setAttribute('href', pl ? '#i-pause' : '#i-play'); $('#playBtn').setAttribute('aria-label', pl ? 'Pause' : 'Play'); }
+  updateLyrics(t - state.offset);
+  micFrame(now); score.tick(t); drawLane(t);
+  const ph = $('#tlph'); if (ph && d) ph.style.left = (t / d * 100) + '%';
+  if (media.src && pl && now - lastSync > 800) { lastSync = now; if (Math.abs(media.currentTime - t) > 0.35) { try { media.currentTime = t; } catch (e) {} } }
+  if (rec) $('#recTime').textContent = fmt((performance.now() - recStart) / 1000);
+}
+const seekEl = $('#seek');
+seekEl.addEventListener('pointerdown', () => seeking = true);
+seekEl.addEventListener('input', () => { const d = P.dur(); if (d) { P.seek(seekEl.value / 1000 * d); } });
+['change', 'pointerup', 'pointercancel', 'blur'].forEach(ev => seekEl.addEventListener(ev, () => seeking = false));
+$('#playBtn').onclick = () => P.playing() ? P.pause() : P.play();
+$('#restartBtn').onclick = () => { P.seek(0); score.reset(); if (!P.playing()) P.play(); };
+song.addEventListener('ended', onEnded);
+function onEnded() {
+  if (rec) stopRec();
+  if (mic.on && score.n > 60) toast('Song finished. Your score: ★ ' + Math.round(100 * score.hit / score.n), 7000);
+}
+$('#micBtn').onclick = toggleMic;
+function setSongVolume(v) {
+  state.songVol = v; $('#vol').value = $('#dockVol').value = Math.round(v * 100); $('#volO').textContent = Math.round(v * 100) + '%';
+  if (ctx) g.songOut.gain.value = v;
+}
+$('#vol').oninput = e => setSongVolume(e.target.value / 100);
+$('#dockVol').oninput = e => setSongVolume(e.target.value / 100);
+$('#backBtn').onclick = () => {
+  P.pause(); if (rec) stopRec(); if (mic.on) stopMic();
+  song.removeAttribute('src'); song.load(); media.removeAttribute('src'); media.load();
+  state.song = null; state.tap = null; $('#tap').hidden = true; $('#chip').hidden = true; closePanel(); exitImmersive();
+  $('#player').hidden = true; $('#import').hidden = false; loadLibrary();
+};
+
+/* ---- mixer bindings ---- */
+const out = (id, f) => { const el = $(id), o = $(id + 'O'); el.addEventListener('input', () => { o.textContent = f(+el.value); applyAudioSettings(); }); };
+out('#micVol', v => v + '%'); out('#echo', v => v + '%'); out('#reverb', v => v + '%'); out('#recSync', v => v + ' ms');
+$('#offset').addEventListener('input', e => { const v = +e.target.value; state.offset = v / 1000; $('#offsetO').textContent = v === 0 ? 'In time' : (v > 0 ? 'Later ' : 'Earlier ') + Math.abs(v / 1000).toFixed(2) + 's'; });
+$('#monitor').addEventListener('change', applyAudioSettings);
+const FX = { dry: [0, 0], studio: [20, 30], hall: [15, 65], stage: [30, 50], echo: [55, 25] };
+document.querySelectorAll('#fxChips .chip').forEach(c => c.onclick = () => {
+  const [e, r] = FX[c.dataset.fx]; $('#echo').value = e; $('#reverb').value = r; $('#echoO').textContent = e + '%'; $('#reverbO').textContent = r + '%';
+  document.querySelectorAll('#fxChips .chip').forEach(x => x.classList.toggle('on', x === c)); applyAudioSettings();
+});
+
+/* ---- drawer ---- */
+const TABS = { voices: 'voicesBody', mic: 'micBody', song: 'songBody', recs: 'recsBody' };
+function openPanel(tab) { $('#panel').classList.add('open'); showTab(tab || 'voices'); }
+function closePanel() { $('#panel').classList.remove('open'); }
+function showTab(t) {
+  Object.entries(TABS).forEach(([k, id]) => { $('#' + id).hidden = k !== t; $('#tab' + k[0].toUpperCase() + k.slice(1)).setAttribute('aria-selected', k === t); });
+  if (t === 'voices') refreshVoiceUI();
+}
+$('#mixBtn').onclick = () => $('#panel').classList.contains('open') ? closePanel() : openPanel('voices');
+$('#panelClose').onclick = closePanel;
+Object.keys(TABS).forEach(k => { $('#tab' + k[0].toUpperCase() + k.slice(1)).onclick = () => showTab(k); });
+
+/* ---- full screen ---- */
+let immersive = false;
+function enterImmersive() { immersive = true; document.body.classList.add('immersive'); const el = document.documentElement; el.requestFullscreen && el.requestFullscreen().catch(() => {}); setTimeout(layoutLyrics, 120); }
+function exitImmersive() { immersive = false; document.body.classList.remove('immersive'); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); setTimeout(layoutLyrics, 120); }
+$('#fsBtn').onclick = () => immersive ? exitImmersive() : enterImmersive();
+document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && immersive) exitImmersive(); });
+window.addEventListener('resize', layoutLyrics);
+window.addEventListener('orientationchange', () => setTimeout(layoutLyrics, 200));
+
+/* ================= RECORDING ================= */
+let rec = null, recChunks = [], recStart = 0, recCount = 0;
+async function startRec() {
+  if (!mic.on) { await toggleMic(); if (!mic.on) return; }
+  if (!window.MediaRecorder) { toast('This browser cannot record audio.'); return; }
+  const mime = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm'].find(m => MediaRecorder.isTypeSupported(m)) || '';
+  recChunks = [];
+  rec = new MediaRecorder(recDest.stream, mime ? { mimeType: mime } : undefined);
+  rec.ondataavailable = e => e.data && e.data.size && recChunks.push(e.data);
+  const r = rec;
+  rec.onstop = () => addRecording(new Blob(recChunks, { type: r.mimeType || mime || 'audio/webm' }));
+  rec.start(1000); recStart = performance.now();
+  $('#recbtn').classList.add('on'); $('#recbtn').setAttribute('aria-label', 'Stop recording');
+  if (!P.playing()) P.play();
+}
+function stopRec() {
+  if (!rec) return; const r = rec; rec = null;
+  try { r.state !== 'inactive' && r.stop(); } catch (e) {}
+  $('#recbtn').classList.remove('on'); $('#recbtn').setAttribute('aria-label', 'Record'); $('#recTime').textContent = '';
+}
+$('#recbtn').onclick = () => rec ? stopRec() : startRec();
+function addRecording(blob) {
+  const url = URL.createObjectURL(blob), ext = /mp4/.test(blob.type) ? 'm4a' : 'webm';
+  const d = new Date(), pad = n => String(n).padStart(2, '0');
+  const slug = (state.title || 'karaoke').replace(/[^\wऀ-ॿ]+/g, '-').replace(/^-|-$/g, '') || 'karaoke';
+  const name = `${slug}-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.${ext}`;
+  const li = document.createElement('li');
+  const nm = document.createElement('div'); nm.className = 'rname'; nm.textContent = name;
+  const au = document.createElement('audio'); au.controls = true; au.src = url;
+  const act = document.createElement('div'); act.className = 'ractions';
+  const dl = document.createElement('a'); dl.className = 'btn sm'; dl.href = url; dl.download = name; dl.innerHTML = '<svg class="i"><use href="#i-download"/></svg> Save';
+  act.appendChild(dl);
+  const file = new File([blob], name, { type: blob.type });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    const sh = document.createElement('button'); sh.className = 'btn sm'; sh.innerHTML = '<svg class="i"><use href="#i-share"/></svg> Share';
+    sh.onclick = () => navigator.share({ files: [file], title: state.title || 'My karaoke' }).catch(() => {});
+    act.appendChild(sh);
+  }
+  const del = document.createElement('button'); del.className = 'btn sm ghost'; del.innerHTML = '<svg class="i"><use href="#i-trash"/></svg> Delete';
+  del.onclick = () => { li.remove(); URL.revokeObjectURL(url); recCount--; syncRecCount(); };
+  act.appendChild(del);
+  li.append(nm, au, act); $('#recs').prepend(li); recCount++; syncRecCount();
+  openPanel('recs'); toast('Recording saved.');
+}
+function syncRecCount() { $('#recCount').textContent = recCount ? '(' + recCount + ')' : ''; $('#recsEmpty').hidden = recCount > 0; }
+
+/* ================= KEYBOARD ================= */
+document.addEventListener('keydown', e => {
+  if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) && document.activeElement.type !== 'range') return;
+  if (!state.song) return;
+  if (state.tap && (e.code === 'Space' || e.key === 'Enter')) { e.preventDefault(); tapNow(); return; }
+  if (e.code === 'Space') { e.preventDefault(); P.playing() ? P.pause() : P.play(); }
+  if (e.key === 'ArrowRight') P.seek(P.time() + 5);
+  if (e.key === 'ArrowLeft') P.seek(P.time() - 5);
+  if (e.key === 'Escape') closePanel();
+});
+
+/* test hooks */
+window.__karaoke = { parseLRC, makeSynced, makePlain, findIdx, state, parseJson3, toLRC, setLyrics, cleanTitle, aiToLines, detectPitch, labelAt };
+syncRecCount();
+pingServer();
+})();
+</script>
+</body>
+</html>
